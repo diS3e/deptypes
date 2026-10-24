@@ -153,10 +153,6 @@
   | con2 D D
   | con3 (Nat -> D)
 
-
-
-
-
 \func D-elim (P : D -> \Type)
              (branch1 : \Pi (n : Nat) -> P (con1 n))
              (branch2 : \Pi (d1 : D) (d2 : D) (p1 : P d1) (p2 : P d2) -> P (con2 d1 d2))
@@ -206,7 +202,7 @@
 -- Выразите Jalt через J. Можно пользоваться только J, idp и всем, что через них выражается
 \func Jalt {A : \Type} (B : \Pi (a a' : A) -> a = a' -> \Type)
            (b : \Pi (a : A) -> B a a idp)
-           {a a' : A} (p : a = a') : B a a' p => {?}
+           {a a' : A} (p : a = a') : B a a' p => J {A} {a} (B a) (b a) {a'} p
 
 -- Выразите J через Jalt. Можно пользоваться только Jalt, idp и всем, что через них выражается
 -- Hint:
@@ -215,10 +211,17 @@
 --    то есть, что для любого p : \Sigma (x : A) (a = x) верно, что (x, idp) = p
 -- c. Используя эти две конструкции, легко определить J
 
-\func transport'' {A : \Type} (B : A -> \Type) {a a' : A} (p : a = a') (b : B a) : B a' => {?}
+\func transport'' {A : \Type} (B : A -> \Type) {a a' : A} (p : a = a') (b : B a) : B a' =>
+  Jalt {A} (\lam x y _ => B x -> B y) (\lam _ y => y) {a} {a'} p b
 
-\func sigma-contr {A : \Type} {a : A} (p : \Sigma (x : A) (a = x)) : (a, idp) = {\Sigma (x : A) (a = x)} p => {?}
+-- Думал использовать это для доказательства sigma-contr но не понадобилось
+\func merge {A B : \Type} {a a' : A} {b b' : B} (p : a = a') (q : b = b') : (a, b) = (a', b') =>
+  Jalt {A} (\lam x y _ => (x, b) = (y, b')) (\lam a'' => Jalt {B} (\lam x y _ => (a'', x) = (a'', y)) (\lam _ => idp) {b} {b'} q) {a} {a'} p
+
+\func sigma-contr {A : \Type} {a : A} (p : \Sigma (x : A) (a = x)) : (a, idp) = {\Sigma (x : A) (a = x)} p
+  \elim p
+    | (x,p) => Jalt {A} (\lam u v t => (u, idp) = {\Sigma (u' : A) (u = u')} (v, t)) (\lam _ => idp) {a} {x} p
 
 \func J' {A : \Type} {a : A} (B : \Pi (a' : A) -> a = a' -> \Type)
          (b : B a idp)
-         {a' : A} (p : a = a') : B a' p => {?}
+         {a' : A} (p : a = a') : B a' p => transport'' {\Sigma (x : A) (a = x)} (\lam (u, v) => B u v) {a, idp} {a', p} (sigma-contr {A} {a} (a', p)) b
