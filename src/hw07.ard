@@ -1,23 +1,62 @@
+\import Algebra.Meta
+\import Arith.Nat (suc/=0)
 \import Data.Bool
-\import Data.List (List, length)
+\import Data.List (::, List, headDef, length, nil, tail)
+\import Function.Meta
 \import Logic
+\import Meta (cases)
+\import Paths
+\import Paths.Meta
 \import lect07
 \open Nat(+,*)
 
 
 -- 1. Определите предикат принадлежности элемента списку
 
-\data In {A : \Type} (a : A) (xs : List A)
-
+\data In {A : \Type} (a : A) (xs : List A) \elim xs
+  | x List.:: xs => {
+    | in (p : a = x)
+    | next (In a xs)
+  }
 
 -- Optional:
 -- 2. Докажите эквивалентность четырех различных определений LessOrEq: lessOrEq, lessOrEq', LessOrEq и LessOrEq'
 
+\func LessOrEq->lessOrEq {n m : Nat} (p : LessOrEq n m) : lessOrEq n m
+  | {0}, {m}, zero<=_ => (m, idp)
+  | {suc n}, {suc m}, suc<=suc p => \let (k, q) => LessOrEq->lessOrEq p \in (k, pmap suc q)
+
+\func lessOrEq->lessOrEq' {n m : Nat} (p : lessOrEq n m) : lessOrEq' n m
+  | {0}, {0}, p => ()
+  | {0}, {suc m}, p => ()
+  | {suc n}, {0}, p => suc/=0 p.2
+  | {suc n}, {suc m}, p => lessOrEq->lessOrEq' (p.1, pmap pred p.2)
+
+\func lessOrEq'->LessOrEq {n m : Nat} (p : lessOrEq' n m) : LessOrEq n m
+  | {0}, {0}, p => zero<=_
+  | {0}, {suc m}, p => zero<=_
+  | {suc n}, {suc m}, p => suc<=suc $ lessOrEq'->LessOrEq p
+
+\func LessOrEq'->lessOrEq {n m : Nat} (p : LessOrEq' n m) : lessOrEq n m
+  | <=-refl p => (0, p)
+  | {n}, {suc m}, <=-step p => \let (k, q) => LessOrEq'->lessOrEq p \in (suc k, pmap suc q)
+
+\func lessOrEq->LessOrEq' {n m : Nat} (p : lessOrEq n m) : LessOrEq' n m
+  | {0}, {0}, p => <=-refl idp
+  | {0}, {suc m}, p => <=-step $ lessOrEq->LessOrEq' (m, idp)
+  | {suc n}, {0}, p => \let (k, q) => p \in \case suc/=0 q
+  | {suc n}, {suc m}, p => \let (k, q) => p \in \case k \as b, q : suc (n + b) = suc m \return LessOrEq' (suc n) (suc m) \with {
+    | 0, p1 => <=-refl p1
+    | suc b, p1 => <=-step (lessOrEq->LessOrEq' (b, pmap pred p1))
+  }
 
 -- 3. Определите рефлексивное транзитивное замыкание отношения
 --    То есть ReflTransClosure R -- это минимальное рефлексивное и транзитивное отношение, содержащее R
 
 \data ReflTransClosure {A : \Type} (R : A -> A -> \Type) (x y : A)
+  | base (R x y)
+  | refl (x = y)
+  | trans (z : A) (ReflTransClosure R x z) (ReflTransClosure R z y)
 
 
 -- 4. Докажите, что если R уже рефлексивно и транзитивно, то ReflTransClosure R эквивалентно R
@@ -28,42 +67,118 @@
                            (refl : \Pi (x : A) -> R x x)
                            (trans : \Pi (x y z : A) -> R x y -> R y z -> R x z)
   : \Pi (x y : A) -> R x y <-> ReflTransClosure R x y
-  => {?}
+  => \lam _ _ =>
+      ( base
+      , helper
+      )
+    \where {
+      \func helper {x y : A} (p : ReflTransClosure R x y) : R x y \elim p
+        | base r => r
+        | ReflTransClosure.refl p => transport (R x) p (refl x)
+        | ReflTransClosure.trans z p1 p2 => trans x z y (helper p1) (helper p2)
+    }
 
 
 -- 5. Определите предикат Sublist xs ys на списках, означающий "список xs является подсписком ys"
 
+\open List
+\data Sublist {A : \Type} (xs ys : List A) \elim xs, ys
+  | nil, y => nil-is-sublist
+  | x :: xs, y :: ys => cons-take (x = y) (Sublist xs ys)
+  | x, y :: ys => cons-drop (Sublist x ys)
 
 -- 6. Докажите, что Sublist (filter p xs) xs для любых p и xs
 
+\func filter-is-sublist {A : \Type} {xs : List A} {p : A -> Bool} : Sublist (filter p xs) xs \elim xs
+  | nil => nil-is-sublist
+  | a :: xs => \case p a \as b
+    \return Sublist (\case b \with {
+    | true => a :: filter p xs
+    | false => filter p xs
+  }) (a :: xs)
+    \with {
+      | false => cons-drop filter-is-sublist
+      | true => cons-take idp filter-is-sublist
+    }
 
 -- 7. Определите filter через if, а не через \case
 --    Докажите для этой версии filter лемму filter-lem
 
-\func filter' {A : \Type} (p : A -> Bool) (xs : List A) : List A => {?}
+\func filter' {A : \Type} (p : A -> Bool) (xs : List A) : List A \elim xs
+  | nil => nil
+  | a :: xs => if (p a) (a :: filter' p xs) (filter' p xs)
 
-\func filter-lem {A : \Type} (p : A -> Bool) (xs : List A) : LessOrEq (length (filter' p xs)) (length xs) => {?}
+\func filter-lem {A : \Type} (p : A -> Bool) (xs : List A) : LessOrEq (length (filter' p xs)) (length xs) \elim xs
+  | nil => zero<=_
+  | a :: xs => \case p a \as b
+    \return LessOrEq (length (if (b) (a :: filter' p xs) (filter' p xs))) (suc (length xs))
+    \with {
+      | false => <=-helper (filter-lem p xs)
+      | true => suc<=suc (filter-lem p xs)
+    }
 
 
 -- 8. Закончите определение функции \func BoolFuncLem (f : Bool -> Bool) (x : Bool) : f (f (f x)) = f x из лекции
 
+\func BoolFuncLem' (f : Bool -> Bool) (x : Bool) : f (f (f x)) = f x
+  => cases (x arg addPath, f true arg addPath, f false arg addPath) \with {
+    | false, p, false, q, false, r => rewrite (r, r) r
+    | false, p, false, q, true,  r => rewrite (r, q) r
+    | false, p, true,  q, false, r => rewrite (r, r) r
+    | false, p, true,  q, true,  r => rewrite (r, q) q
+    | true,  p, false, q, false, r => rewrite (q, r) r
+    | true,  p, false, q, true,  r => rewrite (q, r) q
+    | true,  p, true,  q, false, r => rewrite (q, q) q
+    | true,  p, true,  q, true,  r => rewrite (q, q) q
+  }
 
 -- 9. Докажите, что предикат isEven разрешим
 
 \func isEven (n : Nat) => \Sigma (k : Nat) (n = 2 * k)
 
-\func isEven-dec : DecPred isEven => {?}
+\func isEven-dec : DecPred isEven => isEven-dec'
 
+\func isEven-dec' (a : Nat) : Decide (isEven a) \elim a
+  | 0 => yes (0, idp)
+  | 1 => no (\lam (a, q) => \case a \as a', q : 1 = 2 * a' \return Empty \with {
+    | 0, q' => \case q'
+    | suc a, q' => \case q'
+  })
+  | suc (suc a) => \case isEven-dec' a \with {
+    | yes (k, p) => yes (suc k, cong p)
+    | no n => no (\lam (m, q) => \case m \as m', q : suc (suc a) = 2 * m' \with {
+      | suc m', p => n (m', pmap pred (pmap pred p))
+    })
+  }
 
 -- 10. Докажите, что если равенство элементов A разрешимо, то и равенство элементов List A тоже разрешимо
 
 \instance ListEq {A : \Type} (dec : Eq A) : Eq (List A)
-  | decideEq => {?}
+  | decideEq => helper dec
+  \where {
+    \func helper (dec : Eq A) (a a' : List A) : Decide (a = a') \elim a, a'
+      | nil, nil => yes idp
+      | nil, a :: a' => no (\case __)
+      | a :: a1, nil => no (\case __)
+      | x :: xs, y :: ys => \let
+        | p => dec.decideEq x y
+        | q => helper dec xs ys
+        \in \case p, q \with {
+          | lect07.Decide.yes y, lect07.Decide.yes ys => yes $ pmap2 (\lam a b => a :: b) y ys
+          | lect07.Decide.yes y, lect07.Decide.no ns => no $ \lam t => ns (pmap tail t)
+          | lect07.Decide.no n, lect07.Decide.yes ys => no $ \lam t => n (pmap (headDef x) t)
+          | lect07.Decide.no n, lect07.Decide.no ns => no $ \lam t => ns (pmap tail t)
+        }
+  }
 
 
 -- 11. Докажите, что функции FromBoolToDec и FromDecToBool взаимно обратны
 
-\func bdb {A : \Type} (p : A -> Bool) : FromDecToBool (FromBoolToDec p) = p => {?}
+\func bdb {A : \Type} (p : A -> Bool) : FromDecToBool (FromBoolToDec p) = p => ext $ \lam a =>
+  \case p a \as b \return decToBool (So-dec b) = b \with {
+    | false => idp
+    | true => idp
+  }
 
 -- Мы не можем доказать, что FromBoolToDec (FromDecToBool P) = P,
 -- но мы можем доказать более слабое утверждение: эти предикаты логически эквивалентны
@@ -71,7 +186,16 @@
 
 \func dbd {A : \Type} (P : \Sigma (P : A -> \Type) (DecPred P))
   : \Pi (x : A) -> (FromBoolToDec (FromDecToBool P)).1 x <-> P.1 x
-  => {?}
+  => \lam x => (\lam t => \case P \as P', t : So (decToBool (P'.2 x))  \return P'.1 x \with {
+    | (P1,d), s => \case d x \as d', s : So (decToBool d') \with {
+      | yes a, s1 => a
+    }
+  }, \lam t => \case P \as P', t : P'.1 x \return So (decToBool (P'.2 x)) \with {
+    | (P1,d), y =>  \case d x \as d' \return So (decToBool d') \with {
+      | yes a => ()
+      | no n => n y
+    }
+  })
 
 
 -- Optional:
@@ -85,4 +209,6 @@
 --     Верно, что в общем случае существование такого утверждения влечет противоречие
 --     Это легко доказать при помощи исключенного третьего, но утверждение верно и без него
 --     Докажите этот факт
-\func contrProp {A : \Type} (p : A -> Not A) (q : Not A -> A) : Empty => {?}
+\func contrProp {A : \Type} (p : A -> Not A) (q : Not A -> A) : Empty => \let
+  f => \lam x => p x x
+  \in f (q f)
